@@ -10,9 +10,9 @@ services:
       - "15672:15672"   # Porta do painel web de administração do RabbitMQ
     environment:
       # Usuário padrão do RabbitMQ para login inicial
-      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_USER: admin
       # Senha padrão do RabbitMQ para login inicial
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_PASS: admin123
     healthcheck:
       # Comando usado para verificar se o RabbitMQ está operando corretamente
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]

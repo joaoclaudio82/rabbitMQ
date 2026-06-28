@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     # Conexao RabbitMQ
     rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
-    rabbitmq_user: str = "admin"
-    rabbitmq_password: str = "admin123"
+    rabbitmq_user: str = "guest"
+    rabbitmq_password: str = "guest"
     rabbitmq_vhost: str = "/"
 
     # Nomes de exchanges e filas, isso facilita a manutencao e evita hardcoding, existe para cada fila/exchange uma variavel de ambiente, a fila de pedidos e a de notificacoes, e uma fila de dead letter para pedidos que falharem
