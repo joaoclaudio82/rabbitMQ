@@ -605,3 +605,55 @@ await fila_notif.bind(self.exchange, routing_key="pedido.pago")
 - **`fila_pedidos`** recebe tudo que começar com `pedido.` (o `*` é coringa):
   `pedido.criado`, `pedido.pago`, `pedido.cancelado`...
 - **`fila_notif`** recebe **só** o `pedido.pago`.
+
+### 7. A fila de notificações (`fila_notif`) é usada quando, em qual contexto?
+
+A resposta está nesta linha do `bind`:
+
+```python
+await fila_notif.bind(self.exchange, routing_key="pedido.pago")
+```
+
+**A fila de notificações recebe uma mensagem somente quando um pedido é pago** —
+ou seja, quando alguém envia uma mensagem com o endereço (routing key) exatamente
+igual a `pedido.pago`.
+
+Compare com a fila de pedidos:
+
+```python
+await fila_pedidos.bind(self.exchange, routing_key="pedido.*")     # qualquer pedido.algo
+await fila_notif.bind(self.exchange,   routing_key="pedido.pago")  # SÓ pedido.pago
+```
+
+- **fila_pedidos** usa o coringa `*` → pega **todos** os eventos de pedido.
+- **fila_notif** não tem coringa → é específica, só recebe `pedido.pago`.
+
+**O contexto na prática** (fluxo de uma loja online):
+
+| Evento | Routing key | fila_pedidos recebe? | fila_notif recebe? |
+|--------|-------------|:---:|:---:|
+| Cliente faz um pedido | `pedido.criado` | ✅ Sim | ❌ Não |
+| Cliente **paga** o pedido | `pedido.pago` | ✅ Sim | ✅ **Sim** |
+| Cliente cancela | `pedido.cancelado` | ✅ Sim | ❌ Não |
+
+O contexto específico da fila de notificações é o **momento do pagamento**.
+Quando o pagamento é confirmado, a mensagem `pedido.pago` cai nas **duas filas ao
+mesmo tempo**:
+
+1. Na **fila_pedidos** → para um programa processar o pedido em si (estoque,
+   envio, etc.).
+2. Na **fila_notif** → para um programa **avisar o cliente** que o pagamento foi
+   aprovado.
+
+**Por que essa separação é inteligente?** As duas coisas acontecem quando um
+pedido é pago, mas são tarefas **diferentes e independentes**: processar o pedido
+é a tarefa crítica; mandar a notificação ("seu pagamento foi aprovado! 🎉") é
+secundária. Com filas separadas, se o sistema de notificação (e-mail, SMS, push)
+ficar lento ou cair, isso **não trava** o processamento do pedido — e vice-versa.
+Cada um vai no seu ritmo, retirando mensagens da sua própria caixa. É o
+**desacoplamento**: um mesmo evento dispara duas reações independentes.
+
+**Status atual no projeto:** a fila já está **criada e configurada**, mas o
+programa que vai **consumir** (retirar e processar) as mensagens dela ainda não
+foi escrito — provavelmente vai morar na pasta [app/workers/](../app/workers/),
+que está vazia por enquanto.

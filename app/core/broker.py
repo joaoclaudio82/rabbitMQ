@@ -76,7 +76,15 @@ class RabbitMQBroker:
         fila_notif = await self.channel.declare_queue(
             settings.queue_notificacoes, durable=True
         )
-
+        #fila de pedidos e fila de notificacoes são declaradas, e depois são feitas as ligações (bindings) entre elas e a exchange, 
+        # para que as mensagens sejam enviadas para as filas corretas com base nas routing keys.
+        #a diferenca entre a fila de pedidos e a fila de notificacoes é que a fila de pedidos tem uma dead-letter exchange configurada,
+        # que significa que se uma mensagem falhar ou vencer o tempo, ela será enviada para, já a fila de notificacoes não tem essa configuração, 
+        # então as mensagens que falharem ou vencerem o tempo serão descartadas. A diferença entre a exchange de pedidos e a exchange de notificacoes 
+        # é que a exchange de pedidos é do tipo topic, que significa que ela envia mensagens para filas com base em padrões de roteamento,
+        # como "pedido.*" ou "pedido.pago", já a exchange de notificacoes é do tipo fanout, que significa que ela envia mensagens para todas as 
+        # filas ligadas a ela, sem olhar para o endereço.
+        
         # Bindings: associam routing keys as filas.
         await fila_pedidos.bind(self.exchange, routing_key="pedido.*")
         await fila_notif.bind(self.exchange, routing_key="pedido.pago")
