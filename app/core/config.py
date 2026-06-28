@@ -20,7 +20,10 @@ class Settings(BaseSettings):
     #o exchange de pedidos e do tipo topic, para que possamos ter mais de uma fila consumindo a mesma mensagem, e a fila de notificacoes e do tipo fanout, para que todas as filas recebam a mesma mensagem
     exchange_name: str = "pedidos.exchange"
     exchange_type: str = "topic"
-
+    
+    #aqui queue_pedidos, tem esse nome pois e a fila que vai receber as mensagens de pedidos, 
+    # queue_notificacoes e a fila que vai receber as mensagens de notificacoes, e queue_dlq e a fila que vai receber as mensagens que falharem, poderiamos ter outros nomes representando essas 
+    # variaveis, pois elas sao apenas nomes de filas, mas esses nomes sao bons pois representam bem o que cada fila faz, eles serao usadas no broker.py para declarar as filas e fazer o binding com a exchange, e tambem serao usados no consumer.py para consumir as mensagens dessas filas
     queue_pedidos: str = "pedidos.fila"
     queue_notificacoes: str = "notificacoes.fila"
     queue_dlq: str = "pedidos.dlq"

@@ -17,23 +17,23 @@ class RabbitMQBroker:
     """
     #aqui criamos a topologia do RabbitMQ, ou seja, criamos a exchange, as filas e os bindings entre elas
     def __init__(self) -> None:
-        self.connection: AbstractRobustConnection | None = None
-        self.channel: AbstractRobustChannel | None = None
+        self.connection: AbstractRobustConnection | None = None #aqui criamos a conexao com o RabbitMQ, que sera usada para declarar a exchange, as filas e os bindings entre elas
+        self.channel: AbstractRobustChannel | None = None #aqui criamos a conexao com o RabbitMQ, que sera usada para declarar a exchange, as filas e os bindings entre elas
         self.exchange: AbstractExchange | None = None
     
     #aqui criamos a topologia do RabbitMQ, ou seja, criamos a exchange, as filas e os bindings entre elas
     async def conectar(self) -> None:
-       
+   
         """Abre conexao robusta e declara toda a topologia."""
         self.connection = await aio_pika.connect_robust(settings.amqp_url)
-        self.channel = await self.connection.channel()
+        self.channel = await self.connection.channel() #canal de comunicacao com o RabbitMQ, que sera usado para declarar a exchange, as filas e os bindings entre elas
         # Limita quantas mensagens nao confirmadas o consumidor pega por vez.
         await self.channel.set_qos(prefetch_count=10)
 
         # Exchange principal (topic permite roteamento por padrao de chave).
         self.exchange = await self.channel.declare_exchange(
             settings.exchange_name,
-            ExchangeType.TOPIC,
+            ExchangeType.TOPIC, #isso permite que a exchange envie mensagens para filas com base em padrões de roteamento, como "pedido.*" ou "pedido.pago"
             durable=True,
         )
 
