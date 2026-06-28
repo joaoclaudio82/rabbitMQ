@@ -37,4 +37,4 @@ class RespostaPublicacao(BaseModel):
     pedido_id: str
     status: str
     mensagem: str
-    routing_key: strqu
+    routing_key: str
