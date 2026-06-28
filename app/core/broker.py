@@ -1,6 +1,10 @@
 """
 Camada de conexao com o RabbitMQ usando aio-pika (cliente assincrono).
 Aqui criamos a topologia: exchange, filas, dead-letter queue e bindings.
+
+connection = o cano/fio físico ligando seu programa ao RabbitMQ
+channel = um "sub-cano" dentro da conexão (você pode ter vários canais numa conexão só, é mais eficiente)
+exchange = a agência central que vamos criar para enviar mensagens para as filas corretas
 """
 import aio_pika
 from aio_pika import ExchangeType
@@ -15,34 +19,48 @@ class RabbitMQBroker:
     """
     Encapsula a conexao robusta (reconecta sozinha) e a declaracao da topologia.
     """
-    #aqui criamos a topologia do RabbitMQ, ou seja, criamos a exchange, as filas e os bindings entre elas
+    #essa funcao aqui e chamada no main.py, quando a aplicacao inicia, para que a topologia seja criada antes de qualquer mensagem ser enviada ou recebida
     def __init__(self) -> None:
-        self.connection: AbstractRobustConnection | None = None #aqui criamos a conexao com o RabbitMQ, que sera usada para declarar a exchange, as filas e os bindings entre elas
-        self.channel: AbstractRobustChannel | None = None #aqui criamos a conexao com o RabbitMQ, que sera usada para declarar a exchange, as filas e os bindings entre elas
+        self.connection: AbstractRobustConnection | None = None 
+        self.channel: AbstractRobustChannel | None = None
         self.exchange: AbstractExchange | None = None
     
-    #aqui criamos a topologia do RabbitMQ, ou seja, criamos a exchange, as filas e os bindings entre elas
+    #essa funcao conecta ao RabbitMQ e  cria a exchange, as filas e os bindings entre elas
     async def conectar(self) -> None:
    
         """Abre conexao robusta e declara toda a topologia."""
-        self.connection = await aio_pika.connect_robust(settings.amqp_url)
+     
+        self.connection = await aio_pika.connect_robust(settings.amqp_url)    #settings.amqp_url é o endereço completo de conexão com o RabbitMQ 
         self.channel = await self.connection.channel() #canal de comunicacao com o RabbitMQ, que sera usado para declarar a exchange, as filas e os bindings entre elas
         # Limita quantas mensagens nao confirmadas o consumidor pega por vez.
         await self.channel.set_qos(prefetch_count=10)
 
         # Exchange principal (topic permite roteamento por padrao de chave).
-        self.exchange = await self.channel.declare_exchange(
+        self.exchange = await self.channel.declare_exchange(#declare_exchange é uma função da aio_pika que significa: crie uma exchange com essas características 
             settings.exchange_name,
             ExchangeType.TOPIC, #isso permite que a exchange envie mensagens para filas com base em padrões de roteamento, como "pedido.*" ou "pedido.pago"
             durable=True,
         )
+        ''' 
+            O conjunto funciona assim:
 
+            dlx — cria a agência das cartas mortas.
+            dlq — cria a caixa de correio das cartas mortas (a fila onde elas vão ficar guardadas).
+            dlq.bind(dlx) — amarra a caixa na agência: "tudo que chegar nesta agência, ponha nesta caixa".
+            Como o tipo é FANOUT (joga para todas as filas ligadas, sem olhar endereço), qualquer mensagem que chegue na dlx cai automaticamente na dlq. Simples e direto — não precisa de regra de endereço, porque a fila das mortas recebe tudo mesmo.
+        '''
+        
         # Dead-letter exchange + fila (mensagens que falham ou expiram caem aqui).
-        dlx = await self.channel.declare_exchange(
+        #É para onde vão as mensagens que falharam ou venceram o tempo.
+        dlx = await self.channel.declare_exchange( #aqui o dlx é uma exchange do tipo fanout, que significa que todas as mensagens enviadas para ela serão enviadas para todas as filas ligadas a ela, nesse caso a fila de dead letter
             "pedidos.dlx", ExchangeType.FANOUT, durable=True
         )
         dlq = await self.channel.declare_queue(settings.queue_dlq, durable=True)
         await dlq.bind(dlx)
+        
+        
+        
+        
 
         # Fila de pedidos com dead-letter configurada.
         fila_pedidos = await self.channel.declare_queue(
@@ -53,6 +71,7 @@ class RabbitMQBroker:
                 "x-message-ttl": 60000,  # 60s; expira e vai pra DLQ
             },
         )
+        
         # Fila de notificacoes.
         fila_notif = await self.channel.declare_queue(
             settings.queue_notificacoes, durable=True

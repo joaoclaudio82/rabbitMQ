@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     api_title: str = "Broker RabbitMQ API"
     api_version: str = "1.0.0"
 
+
+
+    #@propertyele faz com que amqp_url se comporte como se fosse um atributo comum (um valor), 
+    # mesmo sendo na verdade uma pequena função que monta o texto.
     @property
     def amqp_url(self) -> str:
         return (
