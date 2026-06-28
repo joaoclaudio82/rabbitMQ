@@ -27,8 +27,12 @@ class Settings(BaseSettings):
     queue_pedidos: str = "pedidos.fila"
     queue_notificacoes: str = "notificacoes.fila"
     queue_dlq: str = "pedidos.dlq"
+    #elas sao usadas no broker.py para declarar as filas e fazer o binding com a exchange, e tambem serao usados no consumer.py para consumir as mensagens dessas filas
 
     # Routing keys
+    #aqui routing_pedido_criado e a routing key que sera usada para enviar mensagens de pedidos criados,
+    # e routing_pedido_pago e a routing key que sera usada para enviar mensagens de pedidos pagos, elas 
+    # serao usadas no producer.py para publicar as mensagens na exchange com a routing key correta, e tambem serao usadas no consumer.py para consumir as mensagens dessas filas
     routing_pedido_criado: str = "pedido.criado"
     routing_pedido_pago: str = "pedido.pago"
 
