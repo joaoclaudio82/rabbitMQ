@@ -1,0 +1,21 @@
+# Define os serviços que serão orquestrados pelo Docker Compose
+services:
+  rabbitmq:
+    # Imagem oficial do RabbitMQ com plugin de gerenciamento habilitado
+    image: rabbitmq:3.13-management
+    # Nome do container dentro do Docker, facilitando comandos e logs
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"     # Porta AMQP exposta para a aplicação se conectar ao RabbitMQ
+      - "15672:15672"   # Porta do painel web de administração do RabbitMQ
+    environment:
+      # Usuário padrão do RabbitMQ para login inicial
+      RABBITMQ_DEFAULT_USER: guest
+      # Senha padrão do RabbitMQ para login inicial
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      # Comando usado para verificar se o RabbitMQ está operando corretamente
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s  # intervalo entre as verificações de saúde
+      timeout: 5s    # tempo máximo para o comando de healthcheck responder
+      retries: 5     # número de tentativas antes de considerar o serviço não saudável
