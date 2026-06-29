@@ -19,3 +19,28 @@ services:
       interval: 10s  # intervalo entre as verificações de saúde
       timeout: 5s    # tempo máximo para o comando de healthcheck responder
       retries: 5     # número de tentativas antes de considerar o serviço não saudável
+
+  api:
+    build: .
+    container_name: broker_api
+    ports:
+      - "8000:8000"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build: .
+    container_name: broker_worker
+    command: ["python", "-m", "app.workers.consumer"]
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: admin
+      RABBITMQ_PASSWORD: admin123
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
