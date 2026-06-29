@@ -63,8 +63,11 @@ class RabbitMQBroker:
         
 
         # Fila de pedidos com dead-letter configurada.
-        fila_pedidos = await self.channel.declare_queue(
-            settings.queue_pedidos,
+        fila_pedidos = await self.channel.declare_queue( #o declare_queue é uma função da aio_pika que significa: crie uma fila com essas características, nesse caso a fila de pedidos tem uma dead-letter exchange configurada, que significa que se uma mensagem falhar ou vencer o tempo, ela será enviada para a dlx
+            #settings.queue_pedidos, #queue_pedidos é o nome da fila que vai receber as mensagens de pedidos, esse nome é definido nas variáveis de
+            # ambiente e lido pelo get_settings(), por meio do settings.queue_pedidos, que é uma instância da classe Settings, que é uma subclasse da BaseSettings do 
+            # Pydantic, que lê as variáveis de ambiente e as transforma 
+            # em atributos da classe Settings
             durable=True,
             arguments={
                 "x-dead-letter-exchange": "pedidos.dlx",
@@ -86,6 +89,14 @@ class RabbitMQBroker:
         # filas ligadas a ela, sem olhar para o endereço.
         
         # Bindings: associam routing keys as filas.
+        #aqui estamos fazendo o binding da fila de pedidos com a exchange de pedidos, e da fila de notificacoes com a exchange de pedidos, ou seja, 
+        # estamos dizendo que as mensagens enviadas para a exchange de pedidos com a routing key "pedido.*" serão enviadas para a fila de pedidos, 
+        # e as mensagens enviadas para a exchange de pedidos com a routing key "pedido.pago" serão enviadas para a fila de notificacoes. Temos um unico exchange,
+        # mas duas filas diferentes, e cada fila recebe mensagens diferentes com base na routing key. 
+        # A fila de pedidos recebe todas as mensagens com a routing key "pedido.*", ou seja, todas as mensagens de pedidos criados e pagos,
+        # enquanto a fila de notificacoes recebe apenas as mensagens de pedidos pagos, com a routing key "pedido.pago". 
+        # Isso permite que tenhamos um fluxo de mensagens mais organizado e eficiente, onde cada fila recebe apenas as mensagens que lhe interessam.
+
         await fila_pedidos.bind(self.exchange, routing_key="pedido.*")
         await fila_notif.bind(self.exchange, routing_key="pedido.pago")
 
