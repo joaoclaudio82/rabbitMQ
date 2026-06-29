@@ -10,9 +10,9 @@ services:
       - "15672:15672"   # Porta do painel web de administração do RabbitMQ
     environment:
       # Usuário padrão do RabbitMQ para login inicial
-      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       # Senha padrão do RabbitMQ para login inicial
-      RABBITMQ_DEFAULT_PASS: admin123
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     healthcheck:
       # Comando usado para verificar se o RabbitMQ está operando corretamente
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
@@ -27,8 +27,8 @@ services:
       - "8000:8000"
     environment:
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: admin
-      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -39,8 +39,8 @@ services:
     command: ["python", "-m", "app.workers.consumer"]
     environment:
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: admin
-      RABBITMQ_PASSWORD: admin123
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     depends_on:
       rabbitmq:
         condition: service_healthy
