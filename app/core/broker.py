@@ -19,13 +19,14 @@ class RabbitMQBroker:
     """
     Encapsula a conexao robusta (reconecta sozinha) e a declaracao da topologia.
     """
-    #essa funcao aqui e chamada no main.py, quando a aplicacao inicia, para que a topologia seja criada antes de qualquer mensagem ser enviada ou recebida
+    #essa funcao aqui e chamada no main.py, quando a aplicacao inicia, para que a topologia seja criada antes 
+    # de qualquer mensagem ser enviada ou recebida
     def __init__(self) -> None:
         self.connection: AbstractRobustConnection | None = None 
         self.channel: AbstractRobustChannel | None = None
         self.exchange: AbstractExchange | None = None
     
-    #essa funcao conecta ao RabbitMQ e  cria a exchange, as filas e os bindings entre elas
+    #conecta ao RabbitMQ e  cria a exchange, as filas e os bindings entre elas
     async def conectar(self) -> None:
    
         """Abre conexao robusta e declara toda a topologia."""
@@ -38,23 +39,25 @@ class RabbitMQBroker:
         # Exchange principal (topic permite roteamento por padrao de chave).
         self.exchange = await self.channel.declare_exchange(#declare_exchange é uma função da aio_pika que significa: crie uma exchange com essas características 
             settings.exchange_name,
-            ExchangeType.TOPIC, #isso permite que a exchange envie mensagens para filas com base em padrões de roteamento, como "pedido.*" ou "pedido.pago"
+            ExchangeType.TOPIC, #isso permite que a exchange envie mensagens para filas 
+                                 #com base em padrões de roteamento, como "pedido.*" ou "pedido.pago"
             durable=True,
         )
-        ''' 
-            O conjunto funciona assim:
-
-            dlx — cria a agência das cartas mortas.
-            dlq — cria a caixa de correio das cartas mortas (a fila onde elas vão ficar guardadas).
-            dlq.bind(dlx) — amarra a caixa na agência: "tudo que chegar nesta agência, ponha nesta caixa".
-            Como o tipo é FANOUT (joga para todas as filas ligadas, sem olhar endereço), qualquer mensagem que chegue na dlx cai automaticamente na dlq. Simples e direto — não precisa de regra de endereço, porque a fila das mortas recebe tudo mesmo.
-        '''
+      
         
         # Dead-letter exchange + fila (mensagens que falham ou expiram caem aqui).
         #É para onde vão as mensagens que falharam ou venceram o tempo.
-        dlx = await self.channel.declare_exchange( #aqui o dlx é uma exchange do tipo fanout, que significa que todas as mensagens enviadas para ela serão enviadas para todas as filas ligadas a ela, nesse caso a fila de dead letter
+        #dlx aqui é uma exchange do tipo fanout,
+        # que significa que todas as mensagens enviadas para ela 
+        # serão enviadas para todas as filas ligadas a ela, nesse caso a fila de 
+        # dead letter
+        
+        
+        dlx = await self.channel.declare_exchange( 
             "pedidos.dlx", ExchangeType.FANOUT, durable=True
         )
+        #Ignora a routing key e joga pra todas as filas ligadas a ela
+        #dlq é a fila de dead letter, que é onde as mensagens que falharem ou vencerem o tempo serão enviadas, ela é ligada ao dlx, então todas as mensagens enviadas para o dlx serão enviadas para a dlq
         dlq = await self.channel.declare_queue(settings.queue_dlq, durable=True)
         await dlq.bind(dlx)
         
@@ -64,7 +67,7 @@ class RabbitMQBroker:
 
         # Fila de pedidos com dead-letter configurada.
         fila_pedidos = await self.channel.declare_queue( #o declare_queue é uma função da aio_pika que significa: crie uma fila com essas características, nesse caso a fila de pedidos tem uma dead-letter exchange configurada, que significa que se uma mensagem falhar ou vencer o tempo, ela será enviada para a dlx
-            #settings.queue_pedidos, #queue_pedidos é o nome da fila que vai receber as mensagens de pedidos, esse nome é definido nas variáveis de
+            settings.queue_pedidos, #queue_pedidos é o nome da fila que vai receber as mensagens de pedidos, esse nome é definido nas variáveis de
             # ambiente e lido pelo get_settings(), por meio do settings.queue_pedidos, que é uma instância da classe Settings, que é uma subclasse da BaseSettings do 
             # Pydantic, que lê as variáveis de ambiente e as transforma 
             # em atributos da classe Settings
