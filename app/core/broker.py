@@ -1,10 +1,10 @@
-"""
-Camada de conexao com o RabbitMQ usando aio-pika (cliente assincrono).
-Aqui criamos a topologia: exchange, filas, dead-letter queue e bindings.
+"""Conexão e topologia do RabbitMQ (aio-pika).
 
-connection = o cano/fio físico ligando seu programa ao RabbitMQ
-channel = um "sub-cano" dentro da conexão (você pode ter vários canais numa conexão só, é mais eficiente)
-exchange = a agência central que vamos criar para enviar mensagens para as filas corretas
+Decisões de design relevantes:
+- connect_robust: reconecta sozinho após quedas de rede, sem código extra de retry.
+- Exchange topic: uma routing key (ex. pedido.*) atende várias filas com bindings distintos.
+- DLX/DLQ: pedidos que falham no processamento ou estouram o TTL são desviados para a
+  dead-letter queue em vez de descartados, permitindo inspeção e reprocessamento.
 """
 import aio_pika
 from aio_pika import ExchangeType
@@ -16,92 +16,43 @@ settings = get_settings()
 
 
 class RabbitMQBroker:
-    """
-    Encapsula a conexao robusta (reconecta sozinha) e a declaracao da topologia.
-    """
-    #essa funcao aqui e chamada no main.py, quando a aplicacao inicia, para que a topologia seja criada antes 
-    # de qualquer mensagem ser enviada ou recebida
+    """Encapsula a conexão robusta e a declaração da topologia."""
+
     def __init__(self) -> None:
-        self.connection: AbstractRobustConnection | None = None 
+        self.connection: AbstractRobustConnection | None = None
         self.channel: AbstractRobustChannel | None = None
         self.exchange: AbstractExchange | None = None
-    
-    #conecta ao RabbitMQ e  cria a exchange, as filas e os bindings entre elas
+
     async def conectar(self) -> None:
-   
-        """Abre conexao robusta e declara toda a topologia."""
-     
-        self.connection = await aio_pika.connect_robust(settings.amqp_url)    #settings.amqp_url é o endereço completo de conexão com o RabbitMQ 
-        self.channel = await self.connection.channel() #canal de comunicacao com o RabbitMQ, que sera usado para declarar a exchange, as filas e os bindings entre elas
-        # Limita quantas mensagens nao confirmadas o consumidor pega por vez.
+        """Abre a conexão e declara exchange, filas, DLQ e bindings. Idempotente no RabbitMQ."""
+        self.connection = await aio_pika.connect_robust(settings.amqp_url)
+        self.channel = await self.connection.channel()
+        # prefetch limita mensagens não confirmadas por consumidor: evita um worker açambarcar a fila.
         await self.channel.set_qos(prefetch_count=10)
 
-        # Exchange principal (topic permite roteamento por padrao de chave).
-        self.exchange = await self.channel.declare_exchange(#declare_exchange é uma função da aio_pika que significa: crie uma exchange com essas características 
-            settings.exchange_name,
-            ExchangeType.TOPIC, #isso permite que a exchange envie mensagens para filas 
-                                 #com base em padrões de roteamento, como "pedido.*" ou "pedido.pago"
-            durable=True,
+        self.exchange = await self.channel.declare_exchange(
+            settings.exchange_name, ExchangeType.TOPIC, durable=True
         )
-      
-        
-        # Dead-letter exchange + fila (mensagens que falham ou expiram caem aqui).
-        #É para onde vão as mensagens que falharam ou venceram o tempo.
-        #dlx aqui é uma exchange do tipo fanout,
-        # que significa que todas as mensagens enviadas para ela 
-        # serão enviadas para todas as filas ligadas a ela, nesse caso a fila de 
-        # dead letter
-        
-        
-        dlx = await self.channel.declare_exchange( 
-            "pedidos.dlx", ExchangeType.FANOUT, durable=True
-        )
-        #Ignora a routing key e joga pra todas as filas ligadas a ela
-        #dlq é a fila de dead letter, que é onde as mensagens que falharem ou vencerem o tempo serão enviadas, ela é ligada ao dlx, então todas as mensagens enviadas para o dlx serão enviadas para a dlq
+
+        # Dead-letter exchange (fanout) + fila: destino das mensagens rejeitadas ou expiradas.
+        dlx = await self.channel.declare_exchange(settings.dlx_name, ExchangeType.FANOUT, durable=True)
         dlq = await self.channel.declare_queue(settings.queue_dlq, durable=True)
         await dlq.bind(dlx)
-        
-        
-        
-        
 
-        # Fila de pedidos com dead-letter configurada.
-        fila_pedidos = await self.channel.declare_queue( #o declare_queue é uma função da aio_pika que significa: crie uma fila com essas características, nesse caso a fila de pedidos tem uma dead-letter exchange configurada, que significa que se uma mensagem falhar ou vencer o tempo, ela será enviada para a dlx
-            settings.queue_pedidos, #queue_pedidos é o nome da fila que vai receber as mensagens de pedidos, esse nome é definido nas variáveis de
-            # ambiente e lido pelo get_settings(), por meio do settings.queue_pedidos, que é uma instância da classe Settings, que é uma subclasse da BaseSettings do 
-            # Pydantic, que lê as variáveis de ambiente e as transforma 
-            # em atributos da classe Settings
+        # Fila de pedidos: x-dead-letter-exchange + TTL ligam o desvio automático para a DLQ.
+        fila_pedidos = await self.channel.declare_queue(
+            settings.queue_pedidos,
             durable=True,
             arguments={
-                "x-dead-letter-exchange": "pedidos.dlx",
-                "x-message-ttl": 60000,  # 60s; expira e vai pra DLQ
+                "x-dead-letter-exchange": settings.dlx_name,
+                "x-message-ttl": settings.pedidos_ttl_ms,
             },
         )
-        
-        # Fila de notificacoes.
-        fila_notif = await self.channel.declare_queue(
-            settings.queue_notificacoes, durable=True
-        )
-        #fila de pedidos e fila de notificacoes são declaradas, e depois são feitas as ligações (bindings) entre elas e a exchange, 
-        # para que as mensagens sejam enviadas para as filas corretas com base nas routing keys.
-        #a diferenca entre a fila de pedidos e a fila de notificacoes é que a fila de pedidos tem uma dead-letter exchange configurada,
-        # que significa que se uma mensagem falhar ou vencer o tempo, ela será enviada para, já a fila de notificacoes não tem essa configuração, 
-        # então as mensagens que falharem ou vencerem o tempo serão descartadas. A diferença entre a exchange de pedidos e a exchange de notificacoes 
-        # é que a exchange de pedidos é do tipo topic, que significa que ela envia mensagens para filas com base em padrões de roteamento,
-        # como "pedido.*" ou "pedido.pago", já a exchange de notificacoes é do tipo fanout, que significa que ela envia mensagens para todas as 
-        # filas ligadas a ela, sem olhar para o endereço.
-        
-        # Bindings: associam routing keys as filas.
-        #aqui estamos fazendo o binding da fila de pedidos com a exchange de pedidos, e da fila de notificacoes com a exchange de pedidos, ou seja, 
-        # estamos dizendo que as mensagens enviadas para a exchange de pedidos com a routing key "pedido.*" serão enviadas para a fila de pedidos, 
-        # e as mensagens enviadas para a exchange de pedidos com a routing key "pedido.pago" serão enviadas para a fila de notificacoes. Temos um unico exchange,
-        # mas duas filas diferentes, e cada fila recebe mensagens diferentes com base na routing key. 
-        # A fila de pedidos recebe todas as mensagens com a routing key "pedido.*", ou seja, todas as mensagens de pedidos criados e pagos,
-        # enquanto a fila de notificacoes recebe apenas as mensagens de pedidos pagos, com a routing key "pedido.pago". 
-        # Isso permite que tenhamos um fluxo de mensagens mais organizado e eficiente, onde cada fila recebe apenas as mensagens que lhe interessam.
+        fila_notif = await self.channel.declare_queue(settings.queue_notificacoes, durable=True)
 
+        # pedido.* alimenta a fila de pedidos; só pedido.pago dispara notificação.
         await fila_pedidos.bind(self.exchange, routing_key="pedido.*")
-        await fila_notif.bind(self.exchange, routing_key="pedido.pago")
+        await fila_notif.bind(self.exchange, routing_key=settings.routing_pedido_pago)
 
     async def fechar(self) -> None:
         if self.connection and not self.connection.is_closed:

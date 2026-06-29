@@ -17,6 +17,9 @@ filas e processa as mensagens, de forma totalmente desacoplada.
 - **Worker (consumer):** consome as filas, processa e confirma (ACK).
 - **DLQ:** mensagens que falham ou expiram são desviadas para inspeção.
 
+A entrega é *at-least-once*: o broker pode reentregar uma mensagem, então o consumer
+é idempotente e ignora `pedido_id` já processado.
+
 ## Tecnologias
 
 - Python 3.12
@@ -52,13 +55,31 @@ como modelo:
 cp .env.example .env
 ```
 
+#### Variáveis de ambiente
+
+| Variável | Obrigatória | Padrão | Descrição |
+|----------|:-----------:|--------|-----------|
+| `RABBITMQ_HOST` | sim | `localhost` | Host do RabbitMQ (`rabbitmq` dentro do Compose). |
+| `RABBITMQ_PORT` | sim | `5672` | Porta AMQP. |
+| `RABBITMQ_USER` | sim | `guest` | Usuário. |
+| `RABBITMQ_PASSWORD` | sim | `guest` | Senha. |
+| `RABBITMQ_VHOST` | sim | `/` | Virtual host. |
+| `EXCHANGE_NAME` | não | `pedidos.exchange` | Exchange principal (*topic*). |
+| `DLX_NAME` | não | `pedidos.dlx` | Dead-letter exchange (*fanout*). |
+| `QUEUE_PEDIDOS` | não | `pedidos.fila` | Fila de pedidos. |
+| `QUEUE_NOTIFICACOES` | não | `notificacoes.fila` | Fila de notificações. |
+| `QUEUE_DLQ` | não | `pedidos.dlq` | Dead-letter queue. |
+| `ROUTING_PEDIDO_CRIADO` | não | `pedido.criado` | Routing key de criação. |
+| `ROUTING_PEDIDO_PAGO` | não | `pedido.pago` | Routing key de pagamento. |
+| `PEDIDOS_TTL_MS` | não | `60000` | TTL da fila de pedidos (ms); ao expirar, vai para a DLQ. |
+
 ## Endpoints
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/health` | Verifica a API e a conexão com o broker. |
-| POST | `/pedidos` | Publica um pedido novo (routing key `pedido.criado`). |
-| POST | `/pedidos/{id}/pagar` | Publica evento de pagamento (routing key `pedido.pago`). |
+| POST | `/pedidos` | Publica um pedido novo (routing key `pedido.criado`); o `pedido_id` é gerado. |
+| POST | `/pedidos/{id}/pagar` | Publica evento de pagamento (routing key `pedido.pago`) **preservando o `id` da URL**. |
 
 ### Exemplo de requisição
 
@@ -67,6 +88,20 @@ curl -X POST http://localhost:8000/pedidos \
   -H "Content-Type: application/json" \
   -d '{"cliente": "Joao Claudio", "itens": [{"produto": "Teclado", "quantidade": 1, "preco_unitario": 5200.0}]}'
 ```
+
+## Tratamento de erros e entrega confiável
+
+- **Dead-letter queue (DLQ):** a fila de pedidos é declarada com `x-dead-letter-exchange`
+  e `x-message-ttl`. Mensagens rejeitadas pelo consumer (`NACK` sem requeue) ou que
+  excedem o TTL são desviadas para a `pedidos.dlq` em vez de descartadas.
+- **Mensagem malformada (*poison message*):** JSON inválido ou fora do schema é
+  rejeitado sem requeue e vai direto para a DLQ — evita loop infinito de reentrega.
+- **Idempotência:** o consumer registra os `pedido_id` já processados e ignora
+  reentregas (entrega *at-least-once*). O controle é em memória; em produção use
+  Redis ou banco para sobreviver a reinícios.
+- **Reconexão:** `connect_robust` reabre a conexão automaticamente após quedas de rede.
+- **Persistência:** mensagens são publicadas como `PERSISTENT` e as filas são `durable`,
+  sobrevivendo a reinícios do broker.
 
 ## Desenvolvimento local
 
@@ -90,9 +125,15 @@ python -m app.workers.consumer       # Worker
 
 ## Testes
 
+A suíte roda sem RabbitMQ (broker e producer são substituídos por fakes), cobrindo:
+schemas, cálculo de total, rotas HTTP (via `httpx`/ASGI), o producer e o caminho
+crítico do consumer — idempotência, regra de negócio e desvio para a DLQ.
+
 ```bash
-pytest -v
+pytest
 ```
+
+Os testes também rodam no CI a cada push e pull request (ver `.github/workflows/ci.yml`).
 
 ## Estrutura do projeto
 

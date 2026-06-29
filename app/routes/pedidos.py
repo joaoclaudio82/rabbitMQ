@@ -31,9 +31,12 @@ async def pagar_pedido(pedido_id: str, dados: PedidoInput):
     """
     Publica um evento de pagamento (routing key: pedido.pago).
     Cai na fila de pedidos E na de notificacoes pelo binding.
+    Preserva o pedido_id da URL: o pagamento refere-se a um pedido existente.
     """
     try:
-        msg = await producer.publicar_pedido(dados, settings.routing_pedido_pago)
+        msg = await producer.publicar_pedido(
+            dados, settings.routing_pedido_pago, pedido_id=pedido_id
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     return RespostaPublicacao(
